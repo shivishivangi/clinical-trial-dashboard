@@ -34,17 +34,38 @@ Three-table relational schema using SQLite:
 - nk_cell
 - monocyte
 
+## Code Structure
+
+- `load_data.py` handles data ingestion. Initializes the SQLite database schema and loads all rows from `data/cell-count.csv` into the three-table relational database.
+
+- `analysis.py` performs all computation and saves all outputs to `outputs/`.
+
+- `dashboard.py` involves display only for this project scale (see design decisions). Loads pre-computed outputs and renders an interactive Plotly Dash dashboard.
+
 ## Design Decisions
 
 **Database Schema**
+
 I chose a 3 table relational schema since projects have a one-to-many relationship with subjects, and subjects have a one-to-many relationship with samples. If response status were stored per sample row, it would repeat identically across all 3 timepoints per patient and risk inconsistency.
 
 Cell counts are stored as columns rather than rows in the samples table because the dataset has exactly 5 fixed populations. This simplifies frequency calculations and maps directly to pandas without requiring any reshaping from the database.
 
 This decision allows for scalability as the number of projects, subjects per project, and samples per patient increase in the long-term. It prevents unnecessary duplication and keeps groups separated but connected through foreign keys. 
 
+**Raw sqlite3 over SQLAlchemy for data insertion**
+
+Initially used SQLAlchemy because of its ORM convenience, however, the final implementation uses raw sqlite3 with a reusable `insert_rows()` helper. This allows for direct control over insert behavior (INSERT OR IGNORE) and removes an unnecessary abstraction layer for a project of this scale (see Challenges). Also, executemany() with raw sqlite3 is significantly faster than SQLAlchemy's to_sql() because it batches all inserts in one operation instead of row by row.
+
 **Plotly Dash for dashboard**
+
 Dash produces a professional, multi-section interactive dashboard that runs locally via a single Python script. 
+
+**Dashboard Architecture (Display-Only)**
+The dashboard reads pre-computed outputs from `outputs/` rather than querying the database directly; separating computation from presentation.
+
+Interactive features (dropdowns, filters) operate on the loaded dataframe in memory, which is fast given the current dataset size (52,500 rows).
+
+For future scale (millions of rows, real-time data updates, or multiple concurrent users), the dashboard will need to query the database directly with lazy loading, use a caching layer like Redis, or move to a backend API architecture such as FastAPI and Dash.
 
 ## Key Findings
 
@@ -64,3 +85,7 @@ AND s.sample_type = 'PBMC'
 ```
 
 ## Challenges
+
+**Avoiding duplicate inserts on rerun**
+
+The initial implementation of `load_data.py` used `to_sql(if_exists="append")` which would duplicate data if script was run more than once. Refactored to use raw sqlite3 with `INSERT OR IGNORE`, which silently skips rows that already exist based on primary key. This makes the script safe to rerun and easy to append new CSV files without duplicating existing data in the future.
