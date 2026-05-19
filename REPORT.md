@@ -48,5 +48,19 @@ Dash produces a professional, multi-section interactive dashboard that runs loca
 
 ## Key Findings
 
+**Average B cell count for melanoma male responders at time=0: 10206.72**
+
+Calculated using this SQL query:
+
+```sql
+SELECT ROUND(AVG(s.b_cell), 2)
+FROM samples s
+JOIN subjects sub ON s.subject_id = sub.subject_id
+WHERE sub.condition = 'melanoma'
+AND sub.sex = 'M'
+AND sub.response = 'yes'
+AND s.time_from_treatment_start = 0
+AND s.sample_type = 'PBMC'
+```
 
 ## Challenges
