@@ -73,6 +73,21 @@ For future scale (millions of rows, real-time data updates, or multiple concurre
 
 ## Key Findings
 
+### Part 3: Statistical Analysis
+Comparing melanoma patients treated with miraclib (PBMC samples only):
+
+| Population | U-Statistic | P-Value | Significant |
+|---|---|---|---|
+| cd4_t_cell | 515277.5 | 0.0133 | Yes |
+| b_cell | 459968.0 | 0.0557 | No |
+| nk_cell | 464546.5 | 0.1211 | No |
+| monocyte | 466509.0 | 0.1631 | No |
+| cd8_t_cell | 478175.5 | 0.6391 | No |
+
+CD4 T cells show a statistically significant difference in relative frequency between responders and non-responders (p = 0.0133, Mann-Whitney U test). No other populations reached significance at the p < 0.05 threshold. This suggests CD4 T cell frequency may be a potential predictor of response to miraclib in melanoma patients.
+
+### Part 4: Subset Analysis
+
 **Average B cell count for melanoma male responders at time=0: 10206.72**
 
 Calculated using this SQL query:
@@ -93,6 +108,9 @@ AND s.sample_type = 'PBMC'
 ### Avoiding duplicate inserts on rerun
 
 The initial implementation of `load_data.py` used `to_sql(if_exists="append")` which would duplicate data if script was run more than once. Refactored to use raw sqlite3 with `INSERT OR IGNORE`, which silently skips rows that already exist based on primary key. This makes the script safe to rerun and easy to append new CSV files without duplicating existing data in the future.
+
+### Percentage Rounding Precision
+Initially rounded percentages to 2 decimal places in `analysis.py`, causing per-sample sums of 99.99% instead of 100%. Switched to 4 decimal places which reduces floating point error to 99.9999% (acceptable for clinical reporting).
 
 ## Testing
 

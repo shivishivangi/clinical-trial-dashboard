@@ -3,3 +3,4 @@ sqlalchemy
 scipy
 plotly
 dash
+kaleido
