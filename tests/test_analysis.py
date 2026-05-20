@@ -1,5 +1,6 @@
-import pandas as pd
+import unittest
 import sqlite3
+import pandas as pd
 import sys
 import os
 import plotly.graph_objects as go
@@ -9,203 +10,183 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from analysis import (
     get_all_samples, compute_frequencies,
     get_melanoma_miraclib, run_mannwhitney, create_boxplot,
-    get_baseline_melanoma, compute_subset_summary, compute_avg_cell
+    get_baseline_melanoma, compute_subset_summary, compute_avg_cell,
 )
 
-conn = sqlite3.connect("clinical_trial.db")
 
-print("=" * 50)
-print("TESTING analysis.py - Part 2")
-print("=" * 50)
+class TestFrequencySummary(unittest.TestCase):
 
-print("\nTest 1: get_all_samples returns correct row count")
-df_samples = get_all_samples(conn)
-assert len(df_samples) == 10500, f"Expected 10500, got {len(df_samples)}"
-print("    PASS")
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = sqlite3.connect("clinical_trial.db")
+        cls.df_samples = get_all_samples(cls.conn)
+        cls.df_summary = compute_frequencies(cls.df_samples)
 
-print("\nTest 2: get_all_samples has correct columns")
-expected_cols = {"sample_id", "b_cell", "cd8_t_cell", "cd4_t_cell", 
-                 "nk_cell", "monocyte", "condition", "project_id"}
-assert expected_cols.issubset(set(df_samples.columns)), \
-    f"Missing columns: {expected_cols - set(df_samples.columns)}"
-print("    PASS")
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
 
-print("\nTest 3: compute_frequencies returns 52500 rows")
-df_summary = compute_frequencies(df_samples)
-assert len(df_summary) == 52500, f"Expected 52500, got {len(df_summary)}"
-print("    PASS")
+    def test_row_count(self):
+        self.assertEqual(len(self.df_samples), 10500)
 
-print("\nTest 4: correct columns in output")
-expected = ["sample", "total_count", "population", "count", "percentage"]
-assert list(df_summary.columns) == expected, \
-    f"Column mismatch: {list(df_summary.columns)}"
-print("    PASS")
+    def test_columns(self):
+        expected = {"sample_id", "b_cell", "cd8_t_cell", "cd4_t_cell",
+                    "nk_cell", "monocyte", "condition", "project_id"}
+        self.assertTrue(expected.issubset(set(self.df_samples.columns)))
 
-print("\nTest 5: exactly 5 populations per sample")
-pop_counts = df_summary.groupby("sample")["population"].count()
-assert (pop_counts == 5).all(), "Some samples don't have exactly 5 populations"
-print("    PASS")
+    def test_frequency_row_count(self):
+        self.assertEqual(len(self.df_summary), 52500)
 
-print("\nTest 6: percentages between 0 and 100")
-assert df_summary["percentage"].between(0, 100).all(), \
-    "Some percentages are out of range"
-print("    PASS")
+    def test_frequency_columns(self):
+        self.assertEqual(
+            list(self.df_summary.columns),
+            ["sample", "total_count", "population", "count", "percentage"]
+        )
 
-print("\nTest 7: project_id filter works")
-df_prj1 = compute_frequencies(df_samples, project_id="prj1")
-assert df_prj1["sample"].nunique() == \
-    df_samples[df_samples["project_id"] == "prj1"]["sample_id"].nunique()
-print("    PASS")
+    def test_five_populations_per_sample(self):
+        pop_counts = self.df_summary.groupby("sample")["population"].count()
+        self.assertTrue((pop_counts == 5).all())
 
-print("\nTest 8: condition filter works")
-df_melanoma = compute_frequencies(df_samples, condition="melanoma")
-assert df_melanoma["sample"].nunique() == \
-    df_samples[df_samples["condition"] == "melanoma"]["sample_id"].nunique()
-print("    PASS")
+    def test_percentages_in_range(self):
+        self.assertTrue(self.df_summary["percentage"].between(0, 100).all())
 
-print("\nTest 9: verify frequencies for sample00000")
-s = df_summary[df_summary["sample"] == "sample00000"]
-assert len(s) == 5, "sample00000 should have 5 rows"
-bcell = s[s["population"] == "b_cell"].iloc[0]
-assert bcell["count"] == 10908, f"Expected 10908, got {bcell['count']}"
-assert bcell["total_count"] == 93214, f"Expected 93214, got {bcell['total_count']}"
-print("    PASS")
+    def test_project_filter(self):
+        df_prj1 = compute_frequencies(self.df_samples, project_id="prj1")
+        expected = self.df_samples[self.df_samples["project_id"] == "prj1"]["sample_id"].nunique()
+        self.assertEqual(df_prj1["sample"].nunique(), expected)
 
-print("\n" + "=" * 50)
-print("TESTING analysis.py - Part 3")
-print("=" * 50)
+    def test_condition_filter(self):
+        df_mel = compute_frequencies(self.df_samples, condition="melanoma")
+        expected = self.df_samples[self.df_samples["condition"] == "melanoma"]["sample_id"].nunique()
+        self.assertEqual(df_mel["sample"].nunique(), expected)
 
-df_mel = get_melanoma_miraclib(conn)
+    def test_spot_check_sample00000(self):
+        s = self.df_summary[self.df_summary["sample"] == "sample00000"]
+        self.assertEqual(len(s), 5)
+        bcell = s[s["population"] == "b_cell"].iloc[0]
+        self.assertEqual(bcell["count"], 10908)
+        self.assertEqual(bcell["total_count"], 93214)
 
-print("\nTest 10: get_melanoma_miraclib returns correct row count")
-assert len(df_mel) == 1968, f"Expected 1968, got {len(df_mel)}"
-print("    PASS")
 
-print("\nTest 11: get_melanoma_miraclib only contains melanoma condition")
-assert (df_mel["condition"] == "melanoma").all(), "Non-melanoma rows found"
-print("    PASS")
+class TestStatisticalAnalysis(unittest.TestCase):
 
-print("\nTest 12: get_melanoma_miraclib only contains miraclib treatment")
-assert (df_mel["treatment"] == "miraclib").all(), "Non-miraclib rows found"
-print("    PASS")
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = sqlite3.connect("clinical_trial.db")
+        cls.df_mel = get_melanoma_miraclib(cls.conn)
+        cls.df_freq = compute_frequencies(cls.df_mel, extra_id_vars=["response"])
+        cls.df_stats = run_mannwhitney(cls.df_freq)
+        cls.fig = create_boxplot(cls.df_freq)
 
-print("\nTest 13: get_melanoma_miraclib only contains PBMC samples")
-assert (df_mel["sample_type"] == "PBMC").all(), "Non-PBMC rows found"
-print("    PASS")
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
 
-print("\nTest 14: get_melanoma_miraclib only contains yes/no response values")
-assert set(df_mel["response"].unique()) == {"yes", "no"}, \
-    f"Unexpected response values: {df_mel['response'].unique()}"
-print("    PASS")
+    def test_melanoma_miraclib_row_count(self):
+        self.assertEqual(len(self.df_mel), 1968)
 
-df_freq = compute_frequencies(df_mel, extra_id_vars=["response"])
+    def test_only_melanoma_condition(self):
+        self.assertTrue((self.df_mel["condition"] == "melanoma").all())
 
-print("\nTest 15: compute_frequencies with extra_id_vars preserves response column")
-assert "response" in df_freq.columns, "response column missing from output"
-print("    PASS")
+    def test_only_miraclib_treatment(self):
+        self.assertTrue((self.df_mel["treatment"] == "miraclib").all())
 
-print("\nTest 16: compute_frequencies with extra_id_vars returns correct row count")
-assert len(df_freq) == 9840, f"Expected 9840, got {len(df_freq)}"
-print("    PASS")
+    def test_only_pbmc_samples(self):
+        self.assertTrue((self.df_mel["sample_type"] == "PBMC").all())
 
-print("\nTest 17: compute_frequencies with extra_id_vars has correct columns")
-expected = ["sample", "total_count", "response", "population", "count", "percentage"]
-assert list(df_freq.columns) == expected, f"Column mismatch: {list(df_freq.columns)}"
-print("    PASS")
+    def test_only_yes_no_response(self):
+        self.assertSetEqual(set(self.df_mel["response"].unique()), {"yes", "no"})
 
-df_stats = run_mannwhitney(df_freq)
+    def test_response_column_preserved(self):
+        self.assertIn("response", self.df_freq.columns)
 
-print("\nTest 18: run_mannwhitney returns one row per cell population")
-assert len(df_stats) == 5, f"Expected 5, got {len(df_stats)}"
-print("    PASS")
+    def test_frequency_row_count_with_response(self):
+        self.assertEqual(len(self.df_freq), 9840)
 
-print("\nTest 19: run_mannwhitney has correct columns")
-expected = ["population", "u_statistic", "p_value", "significant_p05", "significant_bonferroni"]
-assert list(df_stats.columns) == expected, f"Column mismatch: {list(df_stats.columns)}"
-print("    PASS")
+    def test_frequency_columns_with_response(self):
+        self.assertEqual(
+            list(self.df_freq.columns),
+            ["sample", "total_count", "response", "population", "count", "percentage"]
+        )
 
-print("\nTest 20: run_mannwhitney p_values are between 0 and 1")
-assert df_stats["p_value"].between(0, 1).all(), "p_values out of range"
-print("    PASS")
+    def test_mannwhitney_row_count(self):
+        self.assertEqual(len(self.df_stats), 5)
 
-print("\nTest 21: run_mannwhitney significant columns only contain yes/no")
-assert set(df_stats["significant_p05"].unique()).issubset({"yes", "no"}), \
-    f"Unexpected values: {df_stats['significant_p05'].unique()}"
-assert set(df_stats["significant_bonferroni"].unique()).issubset({"yes", "no"}), \
-    f"Unexpected values: {df_stats['significant_bonferroni'].unique()}"
-print("    PASS")
+    def test_mannwhitney_columns(self):
+        self.assertEqual(
+            list(self.df_stats.columns),
+            ["population", "u_statistic", "p_value", "significant_p05", "significant_bonferroni"]
+        )
 
-print("\nTest 22: run_mannwhitney results sorted by p_value ascending")
-assert df_stats["p_value"].is_monotonic_increasing, "Results not sorted by p_value"
-print("    PASS")
+    def test_pvalues_in_range(self):
+        self.assertTrue(self.df_stats["p_value"].between(0, 1).all())
 
-fig = create_boxplot(df_freq)
+    def test_significant_columns_values(self):
+        self.assertTrue(set(self.df_stats["significant_p05"].unique()).issubset({"yes", "no"}))
+        self.assertTrue(set(self.df_stats["significant_bonferroni"].unique()).issubset({"yes", "no"}))
 
-print("\nTest 23: create_boxplot returns a plotly Figure")
-assert isinstance(fig, go.Figure), f"Expected go.Figure, got {type(fig)}"
-print("    PASS")
+    def test_results_sorted_by_pvalue(self):
+        self.assertTrue(self.df_stats["p_value"].is_monotonic_increasing)
 
-print("\nTest 24: create_boxplot has two traces (responders and non-responders)")
-assert len(fig.data) == 2, f"Expected 2 traces, got {len(fig.data)}"
-print("    PASS")
+    def test_boxplot_returns_figure(self):
+        self.assertIsInstance(self.fig, go.Figure)
 
-print("\n" + "=" * 50)
-print("TESTING analysis.py - Part 4")
-print("=" * 50)
+    def test_boxplot_two_traces(self):
+        self.assertEqual(len(self.fig.data), 2)
 
-df_baseline = get_baseline_melanoma(conn)
 
-print("\nTest 25: get_baseline_melanoma returns correct row count")
-assert len(df_baseline) == 656, f"Expected 656, got {len(df_baseline)}"
-print("    PASS")
+class TestSubsetAnalysis(unittest.TestCase):
 
-print("\nTest 26: get_baseline_melanoma only contains time=0 samples")
-assert (df_baseline["time_from_treatment_start"] == 0).all(), "Non-baseline rows found"
-print("    PASS")
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = sqlite3.connect("clinical_trial.db")
+        cls.df_baseline = get_baseline_melanoma(cls.conn)
+        (cls.samples_per_project,
+         cls.response_counts,
+         cls.sex_counts) = compute_subset_summary(cls.df_baseline)
+        cls.avg_bcell = compute_avg_cell(cls.df_baseline, cell_col="b_cell", sex="M", response="yes")
 
-print("\nTest 27: get_baseline_melanoma only contains melanoma miraclib patients")
-assert (df_baseline["condition"] == "melanoma").all(), "Non-melanoma rows found"
-assert (df_baseline["treatment"] == "miraclib").all(), "Non-miraclib rows found"
-print("    PASS")
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
 
-samples_per_project, response_counts, sex_counts = compute_subset_summary(df_baseline)
-avg_bcell = compute_avg_cell(df_baseline, cell_col='b_cell', sex='M', response='yes')
+    def test_baseline_row_count(self):
+        self.assertEqual(len(self.df_baseline), 656)
 
-print("\nTest 28: samples_per_project has correct counts per project")
-prj = samples_per_project.set_index("project_id")["sample_count"]
-assert prj["prj1"] == 384, f"Expected prj1=384, got {prj['prj1']}"
-assert prj["prj3"] == 272, f"Expected prj3=272, got {prj['prj3']}"
-print("    PASS")
+    def test_only_time_zero(self):
+        self.assertTrue((self.df_baseline["time_from_treatment_start"] == 0).all())
 
-print("\nTest 29: response_counts reflects subjects not samples")
-resp = response_counts.set_index("response")["subject_count"]
-assert resp["yes"] == 331, f"Expected yes=331, got {resp['yes']}"
-assert resp["no"] == 325, f"Expected no=325, got {resp['no']}"
-print("    PASS")
+    def test_only_melanoma_miraclib(self):
+        self.assertTrue((self.df_baseline["condition"] == "melanoma").all())
+        self.assertTrue((self.df_baseline["treatment"] == "miraclib").all())
 
-print("\nTest 30: sex_counts reflects subjects not samples")
-sex = sex_counts.set_index("sex")["subject_count"]
-assert sex["M"] == 344, f"Expected M=344, got {sex['M']}"
-assert sex["F"] == 312, f"Expected F=312, got {sex['F']}"
-print("    PASS")
+    def test_samples_per_project(self):
+        prj = self.samples_per_project.set_index("project_id")["sample_count"]
+        self.assertEqual(prj["prj1"], 384)
+        self.assertEqual(prj["prj3"], 272)
 
-print("\nTest 31: avg_bcell for melanoma male responders at time=0 is correct")
-assert avg_bcell == 10401.28, f"Expected 10401.28, got {avg_bcell}"
-print("    PASS")
+    def test_response_counts(self):
+        resp = self.response_counts.set_index("response")["subject_count"]
+        self.assertEqual(resp["yes"], 331)
+        self.assertEqual(resp["no"], 325)
 
-print("\nTest 32: compute_avg_cell respects cell_col and sex parameters")
-avg_female = compute_avg_cell(df_baseline, cell_col='b_cell', sex='F', response='yes')
-assert avg_female != avg_bcell, "Female avg should differ from male avg"
-assert isinstance(avg_female, float), "Expected float result"
-print("    PASS")
+    def test_sex_counts(self):
+        sex = self.sex_counts.set_index("sex")["subject_count"]
+        self.assertEqual(sex["M"], 344)
+        self.assertEqual(sex["F"], 312)
 
-print("\nTest 33: get_baseline_melanoma respects parameters (different time_point returns no rows)")
-df_empty = get_baseline_melanoma(conn, time_point=999)
-assert len(df_empty) == 0, f"Expected 0 rows for time_point=999, got {len(df_empty)}"
-print("    PASS")
+    def test_avg_bcell_correct_value(self):
+        self.assertAlmostEqual(self.avg_bcell, 10401.28, places=2)
 
-print("\n" + "=" * 50)
-print("ALL TESTS PASSED")
-print("=" * 50)
+    def test_avg_bcell_varies_by_sex(self):
+        avg_female = compute_avg_cell(self.df_baseline, cell_col="b_cell", sex="F", response="yes")
+        self.assertNotEqual(avg_female, self.avg_bcell)
+        self.assertIsInstance(avg_female, float)
 
-conn.close()
+    def test_empty_result_for_invalid_timepoint(self):
+        df_empty = get_baseline_melanoma(self.conn, time_point=999)
+        self.assertEqual(len(df_empty), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

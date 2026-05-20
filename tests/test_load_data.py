@@ -1,95 +1,111 @@
+import unittest
 import sqlite3
 import pandas as pd
+import sys
+import os
 
-conn = sqlite3.connect("clinical_trial.db")
-df_raw = pd.read_csv("data/cell-count.csv")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-print("=" * 50)
-print("TESTING load_data.py")
-print("=" * 50)
 
-print("\nTest 1: All 3 tables exist")
-tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn)
-expected = {"projects", "subjects", "samples"}
-actual = set(tables["name"].tolist())
-assert expected == actual, f"Missing tables: {expected - actual}"
-print("    PASS")
+class TestLoadData(unittest.TestCase):
 
-print("\nTest 2: Row counts match original CSV")
-sample_count = pd.read_sql("SELECT COUNT(*) as n FROM samples", conn).iloc[0]["n"]
-assert sample_count == len(df_raw), f"Expected {len(df_raw)} samples, got {sample_count}"
-print(f"    PASS ({sample_count} samples)")
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = sqlite3.connect("clinical_trial.db")
+        cls.df_raw = pd.read_csv("data/cell-count.csv")
 
-print("\nTest 3: Correct number of unique projects")
-project_count = pd.read_sql("SELECT COUNT(*) as n FROM projects", conn).iloc[0]["n"]
-expected_projects = df_raw["project"].nunique()
-assert project_count == expected_projects, f"Expected {expected_projects}, got {project_count}"
-print(f"    PASS ({project_count} projects)")
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
 
-print("\nTest 4: Correct number of unique subjects")
-subject_count = pd.read_sql("SELECT COUNT(*) as n FROM subjects", conn).iloc[0]["n"]
-expected_subjects = df_raw["subject"].nunique()
-assert subject_count == expected_subjects, f"Expected {expected_subjects}, got {subject_count}"
-print(f"    PASS ({subject_count} subjects)")
+    def test_all_tables_exist(self):
+        tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", self.conn)
+        self.assertSetEqual({"projects", "subjects", "samples"}, set(tables["name"].tolist()))
 
-print("\nTest 5: No null sample IDs")
-nulls = pd.read_sql("SELECT COUNT(*) as n FROM samples WHERE sample_id IS NULL", conn).iloc[0]["n"]
-assert nulls == 0, f"Found {nulls} null sample IDs"
-print("    PASS")
+    def test_sample_row_count_matches_csv(self):
+        count = pd.read_sql("SELECT COUNT(*) as n FROM samples", self.conn).iloc[0]["n"]
+        self.assertEqual(count, len(self.df_raw))
 
-print("\nTest 6: Foreign keys are intact (check for dangling samples)")
-orphans = pd.read_sql("""
-    SELECT COUNT(*) as n FROM samples 
-    WHERE subject_id NOT IN (SELECT subject_id FROM subjects)
-""", conn).iloc[0]["n"]
-assert orphans == 0, f"Found {orphans} orphaned samples"
-print("    PASS")
+    def test_project_count_matches_csv(self):
+        count = pd.read_sql("SELECT COUNT(*) as n FROM projects", self.conn).iloc[0]["n"]
+        self.assertEqual(count, self.df_raw["project"].nunique())
 
-print("\nTest 7: Cell counts are all positive")
-negatives = pd.read_sql("""
-    SELECT COUNT(*) as n FROM samples
-    WHERE b_cell < 0 OR cd8_t_cell < 0 OR cd4_t_cell < 0 
-    OR nk_cell < 0 OR monocyte < 0
-""", conn).iloc[0]["n"]
-assert negatives == 0, f"Found {negatives} negative cell counts"
-print("    PASS")
+    def test_subject_count_matches_csv(self):
+        count = pd.read_sql("SELECT COUNT(*) as n FROM subjects", self.conn).iloc[0]["n"]
+        self.assertEqual(count, self.df_raw["subject"].nunique())
 
-print("\nTest 8: time_from_treatment_start only has expected values")
-timepoints = pd.read_sql("SELECT DISTINCT time_from_treatment_start FROM samples", conn)
-valid = {0, 7, 14}
-actual_timepoints = set(timepoints["time_from_treatment_start"].tolist())
-assert actual_timepoints.issubset(valid), f"Unexpected timepoints: {actual_timepoints - valid}"
-print(f"    PASS (timepoints: {sorted(actual_timepoints)})")
+    def test_no_null_sample_ids(self):
+        nulls = pd.read_sql(
+            "SELECT COUNT(*) as n FROM samples WHERE sample_id IS NULL", self.conn
+        ).iloc[0]["n"]
+        self.assertEqual(nulls, 0)
 
-print("\nTest 9: Verify specific row from CSV exists in DB")
-result = pd.read_sql("""
-    SELECT s.sample_id, s.b_cell, s.cd8_t_cell, s.cd4_t_cell, 
-           s.nk_cell, s.monocyte, s.time_from_treatment_start,
-           sub.condition, sub.sex, sub.treatment, sub.response,
-           p.project_id
-    FROM samples s
-    JOIN subjects sub ON s.subject_id = sub.subject_id
-    JOIN projects p ON sub.project_id = p.project_id
-    WHERE s.sample_id = 'sample00000'
-""", conn)
+    def test_no_orphaned_samples(self):
+        orphans = pd.read_sql("""
+            SELECT COUNT(*) as n FROM samples
+            WHERE subject_id NOT IN (SELECT subject_id FROM subjects)
+        """, self.conn).iloc[0]["n"]
+        self.assertEqual(orphans, 0)
 
-assert len(result) == 1, "sample00000 not found in DB"
-row = result.iloc[0]
-assert row["project_id"] == "prj1"
-assert row["condition"] == "melanoma"
-assert row["sex"] == "M"
-assert row["treatment"] == "miraclib"
-assert row["response"] == "no"
-assert row["b_cell"] == 10908
-assert row["cd8_t_cell"] == 24440
-assert row["cd4_t_cell"] == 20491
-assert row["nk_cell"] == 13864
-assert row["monocyte"] == 23511
-assert row["time_from_treatment_start"] == 0
-print("    PASS (sample00000 verified)")
+    def test_cell_counts_non_negative(self):
+        negatives = pd.read_sql("""
+            SELECT COUNT(*) as n FROM samples
+            WHERE b_cell < 0 OR cd8_t_cell < 0 OR cd4_t_cell < 0
+            OR nk_cell < 0 OR monocyte < 0
+        """, self.conn).iloc[0]["n"]
+        self.assertEqual(negatives, 0)
 
-print("\n" + "=" * 50)
-print("ALL TESTS PASSED")
-print("=" * 50)
+    def test_timepoints_are_valid(self):
+        timepoints = pd.read_sql(
+            "SELECT DISTINCT time_from_treatment_start FROM samples", self.conn
+        )
+        actual = set(timepoints["time_from_treatment_start"].tolist())
+        self.assertTrue(actual.issubset({0, 7, 14}))
 
-conn.close()
+    def test_specific_row_values(self):
+        result = pd.read_sql("""
+            SELECT s.sample_id, s.b_cell, s.cd8_t_cell, s.cd4_t_cell,
+                   s.nk_cell, s.monocyte, s.time_from_treatment_start,
+                   sub.condition, sub.sex, sub.treatment, sub.response,
+                   p.project_id
+            FROM samples s
+            JOIN subjects sub ON s.subject_id = sub.subject_id
+            JOIN projects p ON sub.project_id = p.project_id
+            WHERE s.sample_id = 'sample00000'
+        """, self.conn)
+        self.assertEqual(len(result), 1)
+        row = result.iloc[0]
+        self.assertEqual(row["project_id"], "prj1")
+        self.assertEqual(row["condition"], "melanoma")
+        self.assertEqual(row["sex"], "M")
+        self.assertEqual(row["treatment"], "miraclib")
+        self.assertEqual(row["response"], "no")
+        self.assertEqual(row["b_cell"], 10908)
+        self.assertEqual(row["cd8_t_cell"], 24440)
+        self.assertEqual(row["cd4_t_cell"], 20491)
+        self.assertEqual(row["nk_cell"], 13864)
+        self.assertEqual(row["monocyte"], 23511)
+        self.assertEqual(row["time_from_treatment_start"], 0)
+
+    def test_csv_crossvalidation_cell_counts(self):
+        for _, csv_row in self.df_raw.head(10).iterrows():
+            db_row = pd.read_sql(
+                "SELECT b_cell, cd8_t_cell, cd4_t_cell, nk_cell, monocyte FROM samples WHERE sample_id = ?",
+                self.conn, params=[csv_row["sample"]]
+            ).iloc[0]
+            self.assertEqual(db_row["b_cell"], csv_row["b_cell"])
+            self.assertEqual(db_row["cd8_t_cell"], csv_row["cd8_t_cell"])
+            self.assertEqual(db_row["cd4_t_cell"], csv_row["cd4_t_cell"])
+            self.assertEqual(db_row["nk_cell"], csv_row["nk_cell"])
+            self.assertEqual(db_row["monocyte"], csv_row["monocyte"])
+
+    def test_csv_crossvalidation_conditions(self):
+        db_conditions = set(
+            pd.read_sql("SELECT DISTINCT condition FROM subjects", self.conn)["condition"]
+        )
+        csv_conditions = set(self.df_raw["condition"].unique())
+        self.assertSetEqual(db_conditions, csv_conditions)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -8,4 +8,7 @@ pipeline:
 dashboard:
 	python dashboard.py
 
-.PHONY: setup pipeline dashboard
+test:
+	python -m unittest discover -s tests -p "test_*.py" -v
+
+.PHONY: setup pipeline dashboard test

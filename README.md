@@ -76,6 +76,7 @@ For hundreds of projects and thousands of samples, adding indexes on frequently 
 ## Running Tests
 
 ```bash
-python tests/test_load_data.py
-python tests/test_analysis.py
+make test
 ```
+
+Unit and integration tests covering database integrity, analysis correctness, and parameterized query behavior.
