@@ -3,4 +3,5 @@ sqlalchemy
 scipy
 plotly
 dash
+dash-bootstrap-components
 kaleido
