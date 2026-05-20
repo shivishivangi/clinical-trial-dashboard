@@ -48,7 +48,6 @@ TABLE_STYLE = dict(
     style_header={"fontWeight": "bold", "backgroundColor": "#0f1117",
                   "color": "#00d4aa", "border": "1px solid #2d3748"},
     style_data={"border": "1px solid #2d3748"},
-    style_filter={"backgroundColor": "#2d3748", "color": "#ffffff", "border": "1px solid #4a5568"},
 )
 
 # Layout
@@ -294,4 +293,4 @@ def update_avg(condition, treatment, sample_type, timepoint, cell_col, sex, resp
 
 
 if __name__ == "__main__":
-    app.run(debug=False, port=8050)
+    app.run(debug=False, host="0.0.0.0", port=8050)
