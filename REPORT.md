@@ -36,12 +36,14 @@ Three-table relational schema using SQLite:
 
 ## Code Structure
 
-- `load_data.py` handles data ingestion. Initializes the SQLite database schema and loads all rows from `data/cell-count.csv` into the three-table relational database.
+- `load_data.py` handles data ingestion. 
+  Initializes the SQLite database schema and loads all rows from `data/cell-count.csv` into the three-table relational database.
 
 - `analysis.py` performs all computation and saves all outputs to `outputs/`.
 
-- `dashboard.py` involves display only for this project scale (see design decisions). Loads pre-computed outputs and renders an interactive Plotly Dash dashboard.
-
+- `dashboard.py` renders an interactive Plotly Dash dashboard. 
+  Loads pre-computed outputs for Parts 2-3 and queries the database directly for Part 4 interactive filtering.
+  
 ## Design Decisions
 
 ### Database Schema
@@ -64,16 +66,19 @@ Relative frequencies are rounded to 4 decimal places. Due to floating point arit
 
 Dash produces a professional, multi-section interactive dashboard that runs locally via a single Python script. 
 
-**Dashboard Architecture (Display-Only)**
-The dashboard reads pre-computed outputs from `outputs/` rather than querying the database directly; separating computation from presentation.
+**Dashboard Architecture**
+The dashboard reads pre-computed outputs from `outputs/` for Parts 2 and 3. Part 4 queries the database directly to support interactive filtering: the user can select condition, treatment, timepoint, sex, and cell population from dropdowns and results update reactively.
 
-Interactive features (dropdowns, filters) operate on the loaded dataframe in memory, which is fast given the current dataset size (52,500 rows).
+For future scale (millions of rows, real-time data updates, or multiple concurrent users), the dashboard will need a caching layer like Redis, or move to a backend API architecture such as FastAPI and Dash.
 
-For future scale (millions of rows, real-time data updates, or multiple concurrent users), the dashboard will need to query the database directly with lazy loading, use a caching layer like Redis, or move to a backend API architecture such as FastAPI and Dash.
+### SQL Injection Prevention
+`get_distinct_values()` uses an allowlist of valid tables and columns to guard against injection since table and column names cannot be parameterized in SQLite.
 
 ## Key Findings
 
 ### Part 3: Statistical Analysis
+
+#### Findings
 Comparing melanoma patients treated with miraclib (PBMC samples only for all timestamps):
 
 | Population | U-Statistic | P-Value | p < 0.05 | Bonferroni (p < 0.01) |
@@ -88,7 +93,7 @@ CD4 T cells show a statistically significant difference in relative frequency be
 
 However, cd4_t_cell does not survive Bonferroni correction for multiple comparisons (adjusted threshold p < 0.01). This result should be treated as a hypothesis worth investigating rather than a definitive biomarker claim.
 
-### Statistical Analysis Methodology (Part 3)
+#### Methodology
 
 **Mann-Whitney U over t-test**
 Cell frequency data does not follow a normal distribution in either response group, confirmed by Shapiro-Wilk normality tests (responders: p < 0.0001, non-responders: p = 0.0054). Mann-Whitney U is the appropriate non-parametric alternative because it makes no normality assumption and is valid for the group sizes observed (responders n=993, non-responders n=975).
