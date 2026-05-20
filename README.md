@@ -5,8 +5,6 @@ A Python-based analysis pipeline and interactive dashboard for exploring immune 
 
 ## How to Run
 
-Requires Python 3.8+ and `make`
-
 ```bash
 git clone https://github.com/shivishivangi/clinical-trial-dashboard.git
 cd clinical-trial-dashboard
@@ -17,7 +15,7 @@ make dashboard
 
 ## Dashboard
 
-Live: 
+Live: https://clinical-trial-dashboard-g1d7.onrender.com
 
 Local: http://localhost:8050 after `make dashboard`
 
