@@ -154,8 +154,10 @@ def create_boxplot(df):
         xaxis_title="Cell Population",
         yaxis_title="Relative Frequency (%)",
         boxmode="group",
-        plot_bgcolor="white",
-        legend_title="Response"
+        plot_bgcolor="#1e2130",
+        paper_bgcolor="#1e2130",
+        font={"color": "#ffffff"},
+        legend={"title": "Response", "bgcolor": "#1e2130"},
     )
 
     return fig
@@ -163,7 +165,22 @@ def create_boxplot(df):
 
 def get_baseline_melanoma(conn, condition='melanoma', treatment='miraclib',
                           sample_type='PBMC', time_point=0):
-    return pd.read_sql("""
+    filters = ["s.sample_type = ?"]
+    params  = [sample_type]
+
+    if condition is not None:
+        filters.append("sub.condition = ?")
+        params.append(condition)
+    if treatment is not None:
+        filters.append("sub.treatment = ?")
+        params.append(treatment)
+    if time_point is not None:
+        filters.append("s.time_from_treatment_start = ?")
+        params.append(time_point)
+
+    where = " AND ".join(filters)
+
+    return pd.read_sql(f"""
         SELECT
             s.sample_id,
             s.b_cell, s.cd8_t_cell, s.cd4_t_cell, s.nk_cell, s.monocyte,
@@ -177,11 +194,8 @@ def get_baseline_melanoma(conn, condition='melanoma', treatment='miraclib',
         FROM samples s
         JOIN subjects sub ON s.subject_id = sub.subject_id
         JOIN projects p ON sub.project_id = p.project_id
-        WHERE sub.condition = ?
-        AND sub.treatment = ?
-        AND s.sample_type = ?
-        AND s.time_from_treatment_start = ?
-    """, conn, params=[condition, treatment, sample_type, time_point])
+        WHERE {where}
+    """, conn, params=params)
 
 
 def compute_subset_summary(df):
@@ -245,7 +259,6 @@ def main():
     df_stats = run_mannwhitney(df_freq)
     df_stats.to_csv("outputs/mannwhitney_results.csv", index=False)
     fig = create_boxplot(df_freq)
-    fig.write_html("outputs/boxplot.html")
     fig.write_image("outputs/boxplot.png")
     print(f"  Saved mannwhitney_results.csv and boxplot.html to outputs/")
 
