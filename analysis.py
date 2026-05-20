@@ -260,7 +260,7 @@ def main():
     df_stats.to_csv("outputs/mannwhitney_results.csv", index=False)
     fig = create_boxplot(df_freq)
     fig.write_image("outputs/boxplot.png")
-    print(f"  Saved mannwhitney_results.csv and boxplot.html to outputs/")
+    print(f"  Saved mannwhitney_results.csv and boxplot.png to outputs/")
 
     print("\nRunning Part 4: Subset Analysis")
     df_baseline = get_baseline_melanoma(conn)

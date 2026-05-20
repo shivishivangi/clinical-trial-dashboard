@@ -5,7 +5,7 @@
 - Part 2: Frequency summary table
 - Part 3: Statistical analysis + boxplot (melanoma, miraclib, PBMC)
 - Part 4: Subset queries (baseline samples, project counts, responder breakdown)
-- Dashboard: Plotly Dash with 4 sections
+- Dashboard: Plotly Dash with 3 sections
 
 ## Database Schema
 
@@ -16,7 +16,7 @@ Three-table relational schema using SQLite:
 
 **subjects**
 - subject_id (PK)
-- project_id (FK - projects)
+- project_id (FK -> projects)
 - condition
 - age
 - sex
@@ -25,7 +25,7 @@ Three-table relational schema using SQLite:
 
 **samples**
 - sample_id (PK)
-- subject_id (FK - subjects)
+- subject_id (FK -> subjects)
 - sample_type
 - time_from_treatment_start
 - b_cell
@@ -41,8 +41,7 @@ Three-table relational schema using SQLite:
 
 - `analysis.py` performs all computation and saves all outputs to `outputs/`.
 
-- `dashboard.py` renders an interactive Plotly Dash dashboard. 
-  Loads pre-computed outputs for Parts 2-3 and queries the database directly for Part 4 interactive filtering.
+- `dashboard.py` Renders an interactive Plotly Dash dashboard with 3 tabs: Frequency Summary (Part 2), Statistical Analysis (Part 3), and Subset Explorer (Part 4).
   
 ## Design Decisions
 
@@ -67,19 +66,19 @@ Relative frequencies are rounded to 4 decimal places. Due to floating point arit
 Dash produces a professional, multi-section interactive dashboard that runs locally via a single Python script. 
 
 **Dashboard Architecture**
-The dashboard reads pre-computed outputs from `outputs/` for Parts 2 and 3. Part 4 queries the database directly to support interactive filtering: the user can select condition, treatment, timepoint, sex, and cell population from dropdowns and results update reactively.
+Part 2 data is loaded from the database at startup via `get_all_samples()` and filtered reactively in callbacks via `compute_frequencies()`. Part 3 is computed at startup directly from the database via `get_melanoma_miraclib()` and `create_boxplot()`. Part 4 queries the database directly on each user interaction via `get_baseline_melanoma()`.
 
 For future scale (millions of rows, real-time data updates, or multiple concurrent users), the dashboard will need a caching layer like Redis, or move to a backend API architecture such as FastAPI and Dash.
 
 ### SQL Injection Prevention
-`get_distinct_values()` uses an allowlist of valid tables and columns to guard against injection since table and column names cannot be parameterized in SQLite.
+`get_baseline_melanoma()` uses parameterized queries (`?` placeholders) rather than string interpolation for all user-supplied filter values, preventing SQL injection in interactive callbacks.
 
 ## Key Findings
 
 ### Part 3: Statistical Analysis
 
 #### Findings
-Comparing melanoma patients treated with miraclib (PBMC samples only for all timestamps):
+Comparing melanoma patients treated with miraclib (PBMC samples only for all timepoints):
 
 | Population | U-Statistic | P-Value | p < 0.05 | Bonferroni (p < 0.01) |
 |---|---|---|---|---|
@@ -154,6 +153,12 @@ Initially rounded percentages to 2 decimal places in `analysis.py`, causing per-
 
 ### Incorrect B Cell Average (Caught and Corrected)
 The initial SQL query used to verify the average B cell count for melanoma male responders at time=0 was missing `AND sub.treatment = 'miraclib'`, returning 10206.72 instead of the correct 10401.28. The spec states "among these samples" meaning the miraclib filter needs to be included. Caught this mistake by cross-checking against the implemented part 4 analysis.py output.
+
+### dcc.Graph over iframe for Boxplot
+Originally planned to embed `outputs/boxplot.html` as an iframe in the dashboard. Switched to calling `create_boxplot()` directly and passing the figure to `dcc.Graph` for cleaner Dash integration, consistent dark theme styling, and no file dependency at runtime.
+
+### SQLite Connection Management in Dashboard Callbacks
+Static data is loaded once at startup with a single connection that is closed before the app starts. Interactive callbacks open a fresh connection per call and close it immediately after. This avoids thread-safety issues with SQLite's single-writer model without requiring connection pooling.
 
 ## Testing
 
