@@ -74,21 +74,55 @@ For future scale (millions of rows, real-time data updates, or multiple concurre
 ## Key Findings
 
 ### Part 3: Statistical Analysis
-Comparing melanoma patients treated with miraclib (PBMC samples only):
+Comparing melanoma patients treated with miraclib (PBMC samples only for all timestamps):
 
-| Population | U-Statistic | P-Value | Significant |
-|---|---|---|---|
-| cd4_t_cell | 515277.5 | 0.0133 | Yes |
-| b_cell | 459968.0 | 0.0557 | No |
-| nk_cell | 464546.5 | 0.1211 | No |
-| monocyte | 466509.0 | 0.1631 | No |
-| cd8_t_cell | 478175.5 | 0.6391 | No |
+| Population | U-Statistic | P-Value | p < 0.05 | Bonferroni (p < 0.01) |
+|---|---|---|---|---|
+| cd4_t_cell | 515277.5 | 0.0133 | Yes | No |
+| b_cell | 459968.0 | 0.0557 | No | No |
+| nk_cell | 464546.5 | 0.1211 | No | No |
+| monocyte | 466509.0 | 0.1631 | No | No |
+| cd8_t_cell | 478175.5 | 0.6391 | No | No |
 
-CD4 T cells show a statistically significant difference in relative frequency between responders and non-responders (p = 0.0133, Mann-Whitney U test). No other populations reached significance at the p < 0.05 threshold. This suggests CD4 T cell frequency may be a potential predictor of response to miraclib in melanoma patients.
+CD4 T cells show a statistically significant difference in relative frequency between responders and non-responders (p = 0.0133, Mann-Whitney U test). No other populations reached significance at the p < 0.05 threshold. This suggests CD4 T cell frequency may be a potential predictor of response to miraclib in melanoma patients. 
+
+However, cd4_t_cell does not survive Bonferroni correction for multiple comparisons (adjusted threshold p < 0.01). This result should be treated as a hypothesis worth investigating rather than a definitive biomarker claim.
+
+### Statistical Analysis Methodology (Part 3)
+
+**Mann-Whitney U over t-test**
+Cell frequency data does not follow a normal distribution in either response group, confirmed by Shapiro-Wilk normality tests (responders: p < 0.0001, non-responders: p = 0.0054). Mann-Whitney U is the appropriate non-parametric alternative because it makes no normality assumption and is valid for the group sizes observed (responders n=993, non-responders n=975).
+
+**No multiple testing correction**
+Five simultaneous hypothesis tests (one per population) were run against p < 0.05. Technically, a Bonferroni or Benjamini-Hochberg correction should be applied when testing multiple hypotheses simultaneously. For this exploratory analysis, uncorrected p-values are acceptable, but the Bonferroni-adjusted threshold (p < 0.01) is also reported. cd4_t_cell does not survive this stricter threshold, which Bob should acknowledge when presenting findings to Yah.
+
+**Relative frequencies over raw counts**
+Total cell counts vary across samples due to biological variability. A sample with 100,000 total cells and 10,000 B cells is immunologically equivalent to one with 50,000 total cells and 5,000 B cells since both are 10% B cells. Normalizing to relative frequency makes samples comparable regardless of total count, which is the correct unit for comparing immune composition between groups.
+
+**All timepoints included in Part 3**
+Part 3 does not filter to baseline and uses all timepoints for melanoma miraclib PBMC patients. Part 3's comparison captures the full treatment trajectory, while Part 4 is a baseline snapshot (time_from_treatment_start = 0). 
 
 ### Part 4: Subset Analysis
+Baseline melanoma PBMC samples treated with miraclib (time_from_treatment_start = 0):
 
-**Average B cell count for melanoma male responders at time=0: 10206.72**
+| Project | Sample Count |
+|---|---|
+| prj1 | 384 |
+| prj3 | 272 |
+
+| Response | Subject Count |
+|---|---|
+| Responders | 331 |
+| Non-responders | 325 |
+
+| Sex | Subject Count |
+|---|---|
+| Male | 344 |
+| Female | 312 |
+
+Note: prj2 has no melanoma miraclib baseline PBMC samples.
+
+**Average B cell count for melanoma male responders at time=0: 10401.28**
 
 Calculated using this SQL query:
 
@@ -97,6 +131,7 @@ SELECT ROUND(AVG(s.b_cell), 2)
 FROM samples s
 JOIN subjects sub ON s.subject_id = sub.subject_id
 WHERE sub.condition = 'melanoma'
+AND sub.treatment = 'miraclib'
 AND sub.sex = 'M'
 AND sub.response = 'yes'
 AND s.time_from_treatment_start = 0
@@ -111,6 +146,9 @@ The initial implementation of `load_data.py` used `to_sql(if_exists="append")` w
 
 ### Percentage Rounding Precision
 Initially rounded percentages to 2 decimal places in `analysis.py`, causing per-sample sums of 99.99% instead of 100%. Switched to 4 decimal places which reduces floating point error to 99.9999% (acceptable for clinical reporting).
+
+### Incorrect B Cell Average (Caught and Corrected)
+The initial SQL query used to verify the average B cell count for melanoma male responders at time=0 was missing `AND sub.treatment = 'miraclib'`, returning 10206.72 instead of the correct 10401.28. The spec states "among these samples" meaning the miraclib filter needs to be included. Caught this mistake by cross-checking against the implemented part 4 analysis.py output.
 
 ## Testing
 

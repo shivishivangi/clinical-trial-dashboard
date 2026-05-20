@@ -18,10 +18,23 @@ POPULATION_LABELS = {
 }
 
 
+def get_distinct_values(conn, table, column):
+    """
+    Fetch sorted distinct values for a column from a given table.
+    Used by the dashboard to populate dropdowns dynamically.
+    table and column must be trusted internal constants — not user input.
+    """
+    result = pd.read_sql(
+        f"SELECT DISTINCT {column} FROM {table} ORDER BY {column}",
+        conn
+    )
+    return result[column].tolist()
+
+
 def get_all_samples(conn):
     """
-    Fetch all samples with cell counts, condition, and project
-    from the database via a 3-table join.
+    Fetch all samples with cell counts, condition, and project via a 3-table join. 
+    Returns one row per sample across all cohorts.
     """
     return pd.read_sql("""
         SELECT 
@@ -112,7 +125,8 @@ def run_mannwhitney(df):
             "population": population,
             "u_statistic": round(u_stat, 4),
             "p_value": round(p_value, 4),
-            "significant": "yes" if p_value < 0.05 else "no"
+            "significant_p05": "yes" if p_value < 0.05 else "no",
+            "significant_bonferroni": "yes" if p_value < (0.05 / len(CELL_COLS)) else "no"
         })
 
     return pd.DataFrame(results).sort_values("p_value")
@@ -147,6 +161,75 @@ def create_boxplot(df):
     return fig
 
 
+def get_baseline_melanoma(conn, condition='melanoma', treatment='miraclib',
+                          sample_type='PBMC', time_point=0):
+    return pd.read_sql("""
+        SELECT
+            s.sample_id,
+            s.b_cell, s.cd8_t_cell, s.cd4_t_cell, s.nk_cell, s.monocyte,
+            s.time_from_treatment_start,
+            sub.subject_id,
+            sub.response,
+            sub.sex,
+            sub.condition,
+            sub.treatment,
+            p.project_id
+        FROM samples s
+        JOIN subjects sub ON s.subject_id = sub.subject_id
+        JOIN projects p ON sub.project_id = p.project_id
+        WHERE sub.condition = ?
+        AND sub.treatment = ?
+        AND s.sample_type = ?
+        AND s.time_from_treatment_start = ?
+    """, conn, params=[condition, treatment, sample_type, time_point])
+
+
+def compute_subset_summary(df):
+    """
+    Compute summary counts from a filtered sample dataframe.
+    Returns three dataframes:
+    - samples_per_project: sample count grouped by project
+    - response_counts: unique subject count grouped by response (yes/no)
+    - sex_counts: unique subject count grouped by sex (M/F)
+
+    Expects df to have columns: project_id, subject_id, response, sex.
+    Call get_baseline_melanoma() or any parameterized query first to filter
+    the data, then pass the result here.
+
+    Dashboard usage:
+        df = get_baseline_melanoma(conn, condition=selected_condition,
+                                        treatment=selected_treatment,
+                                        time_point=selected_timepoint)
+        samples_per_project, response_counts, sex_counts = compute_subset_summary(df)
+    """
+    samples_per_project = (
+        df.groupby("project_id")
+        .size()
+        .reset_index(name="sample_count")
+    )
+
+    subjects = df.drop_duplicates("subject_id")
+
+    response_counts = (
+        subjects.groupby("response")
+        .size()
+        .reset_index(name="subject_count")
+    )
+
+    sex_counts = (
+        subjects.groupby("sex")
+        .size()
+        .reset_index(name="subject_count")
+    )
+
+    return samples_per_project, response_counts, sex_counts
+
+
+def compute_avg_cell(df, cell_col='b_cell', sex='M', response='yes'):
+    mask = (df["sex"] == sex) & (df["response"] == response)
+    return round(df[mask][cell_col].mean(), 2)
+
+
 def main():
     conn = sqlite3.connect(DB_PATH)
 
@@ -165,6 +248,27 @@ def main():
     fig.write_html("outputs/boxplot.html")
     fig.write_image("outputs/boxplot.png")
     print(f"  Saved mannwhitney_results.csv and boxplot.html to outputs/")
+
+    print("\nRunning Part 4: Subset Analysis")
+    df_baseline = get_baseline_melanoma(conn)
+    samples_per_project, response_counts, sex_counts = compute_subset_summary(df_baseline)
+    avg_bcell = compute_avg_cell(df_baseline, cell_col='b_cell', sex='M', response='yes')
+
+    with open("outputs/part4_results.txt", "w") as f:
+        f.write("PART 4: Baseline Melanoma Miraclib PBMC Samples\n")
+        f.write("=" * 50 + "\n\n")
+        f.write("Samples per project:\n")
+        f.write(samples_per_project.to_string(index=False))
+        f.write("\n\nResponders vs Non-responders:\n")
+        f.write(response_counts.to_string(index=False))
+        f.write("\n\nMales vs Females:\n")
+        f.write(sex_counts.to_string(index=False))
+        f.write(f"\n\nAverage B cell count (melanoma male responders, time=0):\n{avg_bcell}\n")
+
+    print(f"  Samples per project:\n{samples_per_project.to_string(index=False)}")
+    print(f"\n  Responders vs Non-responders:\n{response_counts.to_string(index=False)}")
+    print(f"\n  Males vs Females:\n{sex_counts.to_string(index=False)}")
+    print(f"\n  Avg B cell (melanoma male responders, time=0): {avg_bcell}")
 
     conn.close()
 
